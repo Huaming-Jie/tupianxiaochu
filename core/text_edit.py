@@ -249,7 +249,8 @@ def render_new_text(image_rgb: np.ndarray, new_text: str, style: TextStyle,
                     color_override: Optional[Tuple[int, int, int]] = None,
                     font_override: Optional[str] = None,
                     size_scale: float = 1.0,
-                    opacity: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
+                    opacity: float = 1.0,
+                    softness: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """渲染新文字并融合进图像。
 
     参数
@@ -318,8 +319,12 @@ def render_new_text(image_rgb: np.ndarray, new_text: str, style: TextStyle,
     warped = warp_rgba_to_quad(canvas, dst_quad, (h, w))
 
     # ---- ⑦ 质感匹配：锐度 + 噪点 ----
-    if style.blur_sigma > 0.05:
-        warped = cv2.GaussianBlur(warped, (0, 0), style.blur_sigma)
+    # 文字默认保持锐利——原图里的文字通常比照片背景更清晰，
+    # 盲目把新字按"背景锐度"做高斯模糊（旧逻辑）会把字糊成一团。
+    # 只有当用户显式要求"柔化"时才按背景清晰度做轻微模糊，并限制上限。
+    blur_target = min(style.blur_sigma, 0.6) * max(0.0, softness)
+    if blur_target > 0.05:
+        warped = cv2.GaussianBlur(warped, (0, 0), blur_target)
     if style.noise_sigma > 0.3:
         rgb_part = add_grain(warped[:, :, :3], style.noise_sigma, seed=7)
         warped = np.dstack([rgb_part, warped[:, :, 3]])
@@ -345,7 +350,8 @@ def replace_text(image_rgb: np.ndarray, box: TextBox, new_text: str,
                  color_override: Optional[Tuple[int, int, int]] = None,
                  font_override: Optional[str] = None,
                  size_scale: float = 1.0,
-                 style: Optional[TextStyle] = None
+                 style: Optional[TextStyle] = None,
+                 softness: float = 0.0
                  ) -> Tuple[np.ndarray, TextStyle]:
     """把 ``box`` 位置的原文字替换为 ``new_text``。
 
@@ -358,7 +364,8 @@ def replace_text(image_rgb: np.ndarray, box: TextBox, new_text: str,
     out, _ = render_new_text(erased, new_text, st, fit_mode=fit_mode,
                              color_override=color_override,
                              font_override=font_override,
-                             size_scale=size_scale)
+                             size_scale=size_scale,
+                             softness=softness)
     return out, st
 
 
@@ -385,5 +392,6 @@ def batch_replace(image_rgb: np.ndarray,
                                  fit_mode=kw.get("fit_mode", "fit_box"),
                                  color_override=kw.get("color_override"),
                                  font_override=kw.get("font_override"),
-                                 size_scale=kw.get("size_scale", 1.0))
+                                 size_scale=kw.get("size_scale", 1.0),
+                                 softness=kw.get("softness", 0.0))
     return out

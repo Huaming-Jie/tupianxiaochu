@@ -500,6 +500,12 @@ class TextEditDialog(QDialog):
         self.sp_scale.setValue(1.0)
         form.addRow("字号微调：", self.sp_scale)
 
+        self.sp_soft = QDoubleSpinBox()
+        self.sp_soft.setRange(0.0, 1.0); self.sp_soft.setSingleStep(0.05)
+        self.sp_soft.setValue(0.0)
+        self.sp_soft.setToolTip("0 = 文字保持锐利（默认）；调大则按原图背景的虚化程度做轻微模糊，用于匹配本身就很虚的原图")
+        form.addRow("文字柔化：", self.sp_soft)
+
         self.chk_tight = QCheckBox("笔画级擦除（保留更多背景，推荐）")
         self.chk_tight.setChecked(True)
         form.addRow("", self.chk_tight)
@@ -536,6 +542,7 @@ class TextEditDialog(QDialog):
             font=self.cb_font.currentData() or None,
             size_scale=float(self.sp_scale.value()),
             tight=self.chk_tight.isChecked(),
+            softness=float(self.sp_soft.value()),
         )
 
 
@@ -1374,7 +1381,8 @@ class MainWindow(QMainWindow):
                                   color_override=v["color"],
                                   font_override=v["font"],
                                   size_scale=v["size_scale"],
-                                  style=style)
+                                  style=style,
+                                  softness=v["softness"])
             return out
 
         def done(res):
@@ -1413,7 +1421,8 @@ class MainWindow(QMainWindow):
                                      fit_mode=v["fit_mode"],
                                      color_override=v["color"],
                                      font_override=v["font"],
-                                     size_scale=v["size_scale"])
+                                     size_scale=v["size_scale"],
+                                     softness=v["softness"])
             return out
 
         self._run(job, lambda r: self._set_cur_image(r), "正在生成文字…")
