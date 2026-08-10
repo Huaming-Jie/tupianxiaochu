@@ -224,6 +224,24 @@ def main() -> int:
         p_out = os.path.join(OUT, "08_output.pdf")
         pages_to_pdf(pages, p_out, lossless=False, jpeg_quality=95)
         print(f"  已写出 {p_out}（{os.path.getsize(p_out)/1024:.0f} KB）")
+
+        # 新增：多页只改一页时，未改页应原样保留（不二次光栅化）
+        from core.pdf_io import pages_to_pdf_preserved
+        p_in2 = os.path.join(OUT, "07b_src.pdf")
+        images_to_pdf([img, r5], p_in2, dpi=300, lossless=True)   # 2 页
+        pg = pdf_to_pages(p_in2, dpi=300, adaptive=True)
+        pg[0].image = r1                                           # 仅改第 1 页
+        p_out2 = os.path.join(OUT, "08b_preserved.pdf")
+        pages_to_pdf_preserved(p_in2, pg, [0], p_out2, lossless=True)
+        re_pg = pdf_to_pages(p_out2, dpi=300, adaptive=True)
+        a, b = re_pg[1].image, pg[1].image                        # 未改的第 2 页
+        h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
+        maxdiff = int(np.abs(a[:h, :w].astype(int) - b[:h, :w].astype(int)).max())
+        preserved = maxdiff <= 2
+        saved = 100 * (1 - os.path.getsize(p_out2) / max(1, os.path.getsize(p_out)))
+        print(f"  [{'PASS' if preserved else 'FAIL'}] 保留未改页："
+              f"第2页最大差={maxdiff}，体积省 {saved:.0f}%")
+        all_ok &= preserved
     except Exception as e:
         print("  [SKIP] PDF 测试跳过：", e)
 

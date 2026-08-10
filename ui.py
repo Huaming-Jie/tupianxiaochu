@@ -56,7 +56,8 @@ from PyQt5.QtWidgets import (QAbstractItemView, QAction, QApplication,
 
 from core.inpaint import InpaintOptions, InpaintService
 from core.logo_edit import LogoOptions, place_logo, quad_from_bbox, replace_logo
-from core.pdf_io import HAS_FITZ, PdfPage, pages_to_pdf, pdf_to_pages, probe_pdf
+from core.pdf_io import (HAS_FITZ, PdfPage, pages_to_pdf, pages_to_pdf_preserved,
+                         pdf_to_pages, probe_pdf)
 from core.text_edit import (TextStyle, erase_text, estimate_style,
                             render_new_text, replace_text)
 from core.watermark import auto_detect, refine_mask_for_watermark
@@ -555,6 +556,7 @@ class MainWindow(QMainWindow):
         self.page_idx = 0
         self.src_path: Optional[str] = None
         self.is_pdf = False
+        self.edited_pages: set = set()   # 记录被编辑过的页码，导出时保留未改页
         self._undo: List[np.ndarray] = []
         self._redo: List[np.ndarray] = []
         self._busy = False
@@ -1007,6 +1009,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(img, keep_view=True, reset_mask=False)
         if self.pages:
             self.pages[self.page_idx].image = img
+            self.edited_pages.add(self.page_idx)
 
     def undo(self):
         if not self._undo:
@@ -1016,6 +1019,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(img, keep_view=True, reset_mask=False)
         if self.pages:
             self.pages[self.page_idx].image = img
+            self.edited_pages.add(self.page_idx)
         self._update_status("已撤销")
 
     def redo(self):
@@ -1026,6 +1030,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(img, keep_view=True, reset_mask=False)
         if self.pages:
             self.pages[self.page_idx].image = img
+            self.edited_pages.add(self.page_idx)
         self._update_status("已重做")
 
     # ---------- 后台任务框架 ---------- #
@@ -1107,6 +1112,7 @@ class MainWindow(QMainWindow):
             self.pages = [PdfPage(0, img, w * 72 / 300, h * 72 / 300, 300.0)]
 
         self.page_idx = 0
+        self.edited_pages.clear()
         self.cb_page.blockSignals(True)
         self.cb_page.clear()
         for i, p in enumerate(self.pages):
@@ -1172,6 +1178,14 @@ class MainWindow(QMainWindow):
         lossless = (ret == QMessageBox.Yes)
 
         def job():
+            try:
+                if (self.src_path and self.src_path.lower().endswith(".pdf")
+                        and self.edited_pages):
+                    return pages_to_pdf_preserved(
+                        self.src_path, self.pages, sorted(self.edited_pages),
+                        path, lossless=lossless)
+            except Exception as e:
+                LOG.warning("保留未改页导出失败，回退全量光栅化：%s", e)
             return pages_to_pdf(self.pages, path, lossless=lossless)
 
         self._run(job, lambda r: QMessageBox.information(self, "已导出", str(r)),

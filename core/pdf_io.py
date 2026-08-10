@@ -112,7 +112,10 @@ def pdf_to_pages(path: str, dpi: int = 300, max_dpi: int = 600,
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, pix.n)
         if pix.n == 4:
-            img = img[:, :, :3]
+            # 透明区域按白底合成（alpha=False 时通常已合成，这里做兜底）
+            rgb = img[:, :, :3].astype(np.float32)
+            a = img[:, :, 3:4].astype(np.float32) / 255.0
+            img = (rgb * a + 255.0 * (1.0 - a)).astype(np.uint8)
         elif pix.n == 1:
             img = np.repeat(img, 3, axis=2)
 
@@ -166,6 +169,53 @@ def pages_to_pdf(pages: Sequence[PdfPage], out_path: str,
     doc.save(out_path, garbage=3, deflate=True)
     doc.close()
     LOG.info("PDF 已导出：%s（%d 页）", out_path, n)
+    return out_path
+
+
+# --------------------------------------------------------------------------- #
+def pages_to_pdf_preserved(src_pdf_path: str, pages: Sequence[PdfPage],
+                           edited_indices: Sequence[int], out_path: str,
+                           lossless: bool = True, jpeg_quality: int = 95,
+                           progress: Optional[Callable[[int, int], None]] = None
+                           ) -> str:
+    """重建 PDF，但**未编辑的页直接从原文件逐页拷贝**（字节级保真），
+    只有 ``edited_indices`` 里的页才用（可能已被编辑的）光栅图重嵌。
+
+    价值：多页 PDF 只改其中一两页时，其余页零损失、零重编码，
+    文件也更小；且矢量/文字层、注释、超链接等元数据都原样保留。
+    若原文件不可用或出错，调用方应回退到 :func:`pages_to_pdf` 全量光栅化。
+    """
+    _require_fitz()
+    edited = set(int(i) for i in edited_indices)
+    src = fitz.open(src_pdf_path)
+    out = fitz.open()
+    n = len(pages)
+
+    for i in range(n):
+        if i not in edited:
+            # 原样拷贝该页（保留矢量/文字层、注释、超链接等）
+            out.insert_pdf(src, from_page=i, to_page=i)
+        else:
+            p = pages[i]
+            buf = io.BytesIO()
+            pil = Image.fromarray(p.image)
+            if lossless:
+                pil.save(buf, format="PNG", compress_level=4)
+            else:
+                pil.convert("RGB").save(buf, format="JPEG",
+                                        quality=jpeg_quality, subsampling=0)
+            data = buf.getvalue()
+            page = out.new_page(width=p.width_pt, height=p.height_pt)
+            page.insert_image(fitz.Rect(0, 0, p.width_pt, p.height_pt),
+                              stream=data, keep_proportion=False)
+        if progress:
+            progress(i + 1, n)
+
+    out.save(out_path, garbage=3, deflate=True)
+    out.close()
+    src.close()
+    LOG.info("PDF 已导出（保留未改页）：%s（%d 页，编辑 %d 页）",
+             out_path, n, len(edited))
     return out_path
 
 
