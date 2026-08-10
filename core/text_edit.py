@@ -48,8 +48,7 @@ import numpy as np
 from core.inpaint import InpaintOptions, InpaintService
 from utils import (LOG, TextBox, add_grain, alpha_composite, binarize_mask,
                    dominant_two_colors, estimate_blur_sigma,
-                   estimate_noise_sigma, fit_font_size, has_cjk,
-                   list_available_fonts, order_quad,
+                   estimate_noise_sigma, fit_font_size, has_cjk, order_quad,
                    pick_font, quad_angle, quad_size, quad_to_mask,
                    render_text_rgba, warp_rgba_to_quad)
 
@@ -151,81 +150,6 @@ def build_text_mask(image_rgb: np.ndarray, quads: Sequence[np.ndarray],
 # 2. 文字消除
 # --------------------------------------------------------------------------- #
 
-def _upright_mask(mask: np.ndarray, angle: float) -> np.ndarray:
-    """把可能倾斜的笔画掩膜摆正（按角度反向旋转）。"""
-    if abs(angle) < 0.5 or mask.size == 0:
-        return mask
-    ys, xs = np.where(mask > 0)
-    if len(xs) < 4:
-        return mask
-    cx, cy = float(xs.mean()), float(ys.mean())
-    M = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
-    return cv2.warpAffine(mask, M, (mask.shape[1], mask.shape[0]),
-                          flags=cv2.INTER_NEAREST, borderValue=0)
-
-
-def _normalize_mask(mask: np.ndarray, n: int = 220) -> Optional[np.ndarray]:
-    """裁到笔画外接框，再拉伸到固定画布（位置/缩放归一化，便于跨字体比对）。"""
-    ys, xs = np.where(mask > 0)
-    if len(xs) < 4:
-        return None
-    sub = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    return cv2.resize(sub, (n, n), interpolation=cv2.INTER_NEAREST)
-
-
-def _mask_iou(a: np.ndarray, b: np.ndarray) -> float:
-    inter = int(np.logical_and(a > 0, b > 0).sum())
-    union = int(np.logical_or(a > 0, b > 0).sum())
-    return inter / float(union + 1e-6)
-
-
-def match_font_to_original(image_rgb: np.ndarray, quad: np.ndarray,
-                           original_text: str, font_size: float,
-                           angle: float = 0.0) -> Optional[str]:
-    """在原图已知文字的前提下，于系统可用字体里挑与原字笔画最像的字体。
-
-    做法：把原字笔画掩膜摆正、归一化；对每个候选字体渲染同一段原文、
-    同样归一化，算 IoU（交并比），取最高者。这样替换后的新字会沿用
-    与原图最接近的字体，而不是永远掉到通用默认字体。
-
-    返回字体路径；若原文为空或没有任何候选能渲染（豆腐块）则返回 None，
-    上层会回退到 pick_font 的默认选择。
-    """
-    if not original_text:
-        return None
-    orig = stroke_mask_in_quad(image_rgb, quad, dilate=0)
-    if int((orig > 0).sum()) < 30:
-        return None
-    orig_u = _upright_mask(orig, -angle)
-    orig_n = _normalize_mask(orig_u)
-    if orig_n is None:
-        return None
-
-    cands = list_available_fonts(cjk=has_cjk(original_text))
-    if not cands:
-        return None
-
-    best_fp, best_iou = None, -1.0
-    for fp in cands:
-        try:
-            rgba = render_text_rgba(original_text, fp, int(round(font_size)),
-                                    (0, 0, 0), supersample=1)
-        except Exception:
-            continue
-        if rgba.size == 0:
-            continue
-        cand_mask = (rgba[:, :, 3] > 0).astype(np.uint8)
-        if int(cand_mask.sum()) < 5:
-            continue  # 该字体不含此字形（豆腐块），跳过
-        cand_n = _normalize_mask(cand_mask)
-        if cand_n is None:
-            continue
-        iou = _mask_iou(orig_n, cand_n)
-        if iou > best_iou:
-            best_iou, best_fp = iou, fp
-    return best_fp
-
-
 def erase_text(image_rgb: np.ndarray, quads: Sequence[np.ndarray],
                service: InpaintService, tight: bool = True,
                opt: Optional[InpaintOptions] = None) -> np.ndarray:
@@ -299,14 +223,8 @@ def estimate_style(image_rgb: np.ndarray, quad: np.ndarray,
     st.blur_sigma = estimate_blur_sigma(ring)
     st.noise_sigma = estimate_noise_sigma(ring)
 
-    # 字体：先按是否含中文挑一个能用的；若已知原文字，再在系统字体里
-    # 选与原字笔画最像的，让替换后的字体观感与原图一致
+    # 字体：按是否含中文自动挑选
     st.font_path = pick_font(sample_text or "中Aa", font_hint)
-    if sample_text:
-        matched = match_font_to_original(image_rgb, quad, sample_text,
-                                         st.ink_height, st.angle)
-        if matched:
-            st.font_path = matched
     return st
 
 
