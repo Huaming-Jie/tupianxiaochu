@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-image-editor"
+version = "1.0.0"
+description = "智能图像编辑器：物体/水印/文字消除、文字修改、Logo 替换、PDF 处理（PyQt5 + LaMa）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "smart_image_editor contributors" }]
+keywords = ["image-inpainting", "watermark-removal", "object-removal", "lama", "pyqt5", "ocr"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: Editors",
+]
+
+# 第一档必装依赖；torch / paddleocr / diffusers 等为可选增强，见 requirements.txt
+dependencies = [
+    "numpy>=1.24,<3.0",
+    "opencv-python>=4.8.0",
+    "Pillow>=10.0.0",
+    "PyQt5>=5.15.9",
+    "PyMuPDF>=1.23.0",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+# LaMa TorchScript 后端（需本机有 VC++ 运行时；CPU 版即可）
+torch = ["torch>=2.0.0"]
+# ONNX 后端（无需 torch，更轻量，推荐 Windows 用户走这条）
+onnx = ["onnxruntime>=1.16.0"]
+# OCR：文字消除/修改/水印文本线索
+ocr = ["paddlepaddle", "paddleocr"]
+# Stable Diffusion 生成式修复（需 NVIDIA GPU）
+sd = ["diffusers>=0.25.0", "transformers>=4.36.0", "accelerate>=0.25.0", "safetensors>=0.4.0"]
+
+[project.scripts]
+smart-image-editor = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "ui", "utils"]
+packages = ["core", "models"]

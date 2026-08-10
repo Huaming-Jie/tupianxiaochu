@@ -1,0 +1,47 @@
+# ============================================================================
+# 智能图像编辑器 · .gitignore
+# ============================================================================
+
+# ---- Python 通用 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- 编辑器/IDE ----
+.idea/
+.vscode/
+*.swp
+
+# ---- 日志 ----
+*.log
+
+# ---- 模型权重（首次运行自动下载，不入库） ----
+models_zoo/*
+!models_zoo/.gitkeep
+
+# ---- 自动生成的自检产物 ----
+selftest_out/
+
+# ---- 下载/打包临时残留 ----
+*.part
+*.dl
+*.dl0
+*.dl2
+*.dlreq
+*.serial
+
+# ---- PyInstaller（保留 build.spec 与 build_exe.*） ----
+*.spec
+!build.spec
